@@ -3,7 +3,7 @@ import Mutex from "./mutex";
 import EventEmitter from "./event";
 import { Event, Track, SelfId, IceGatheringState } from "./dict";
 
-function createEventSender() {
+function EventSender() {
     let event = new EventEmitter();
 
     let body = (peerId, data) => {
@@ -43,11 +43,11 @@ function createEventSender() {
     }
 }
 
-export default function createPool() {
+export default function Pool() {
     let peers = {};
     let mtx = new Mutex();
     let track = { audio: null, video: null };
-    let send = createEventSender();
+    let send = EventSender();
 
     let createPeer = id => {
         let peer = new Peer(id, {
@@ -251,19 +251,19 @@ export default function createPool() {
         addCandidate,
         removePeer,
         get localAudioEnabled() {
-            let track = this._track[Track.Audio];
+            let track = track[Track.Audio];
             return track !== null && track.enabled;
         },
         get localVideoEnabled() {
-            let track = this._track[Track.Video];
+            let track = track[Track.Video];
             return track !== null && track.enabled;
         },
-        enableLocalAudio: () => setUserMedia(Track.Audio, true),
-        disableLocalAudio: () => setUserMedia(Track.Audio, false),
-        enableLocalVideo: () => setUserMedia(Track.Video, true),
-        disableLocalVideo: () => setUserMedia(Track.Video, false),
+        enableLocalAudio: () => { setUserMedia(Track.Audio, true) },
+        disableLocalAudio: () => { setUserMedia(Track.Audio, false) },
+        enableLocalVideo: () => { setUserMedia(Track.Video, true) },
+        disableLocalVideo: () => { setUserMedia(Track.Video, false) },
         send: (peerId, data) => {
-            let peer = this._getPeer(peerId)
+            let peer = getPeer(peerId)
             peer?._channel.public.send(data);
         },
         sendToAll: data => {

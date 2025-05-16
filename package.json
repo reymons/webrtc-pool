@@ -2,7 +2,7 @@
   "name": "webrtc-pool",
   "version": "0.0.1",
   "description": "Manage WebRTC peer pool easily",
-  "main": "src/lib.js",
+  "main": "src/index.js",
   "types": "types/lib.d.ts",
   "repository": {
     "type": "git",
