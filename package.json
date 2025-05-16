@@ -1,0 +1,23 @@
+{
+  "name": "webrtc-pool",
+  "version": "0.0.1",
+  "description": "Manage WebRTC peer pool easily",
+  "main": "src/lib.js",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/reymons/webrtc-pool.git"
+  },
+  "keywords": [
+    "JavaScript",
+    "WebRTC"
+  ],
+  "author": "Daniel",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/reymons/webrtc-pool/issues"
+  },
+  "homepage": "https://github.com/reymons/webrtc-pool#readme",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
