@@ -50,7 +50,7 @@ export default function createPool() {
     let send = createEventSender();
 
     let createPeer = id => {
-        const peer = new Peer(id, {
+        let peer = new Peer(id, {
             iceServers:  [
                 { urls: "stun:stun.l.google.com:19302" },
                 {
@@ -107,7 +107,7 @@ export default function createPool() {
         }
     }
     let forEachPeer = cb => {
-        for (const id in this._peers) {
+        for (let id in this._peers) {
             cb(this._peers[id]);
         }
     }
@@ -129,13 +129,13 @@ export default function createPool() {
     }
 
     let makeOffer = async peerId => {
-        const peer = ensurePeer(peerId);
+        let peer = ensurePeer(peerId);
         if (peer.channel.public === null) {
             setPeerChannel(peer, peer.createDataChannel("public"));
         }
         addTrackIfExists(peer, Track.Audio);
         addTrackIfExists(peer, Track.Video);
-        const offer = await peer.createOffer();
+        let offer = await peer.createOffer();
         if (offer.sdp !== undefined) {
             await peer.setLocalDescription(offer);
             setPeer(peerId, peer);
@@ -147,15 +147,15 @@ export default function createPool() {
     
     let acceptOffer = async (peerId, offer) => {
         await mtx.lock();
-        const peer = ensurePeer(peerId);
+        let peer = ensurePeer(peerId);
         if (peer.channel.public === null) {
             peer.ondatachannel = e => setPeerChannel(peer, e.channel);
         }
         addTrackIfExists(peer, Track.Audio);
         addTrackIfExists(peer, Track.Video);
-        const desc = new RTCSessionDescription({ type: "offer", sdp: offer.sdp }); 
+        let desc = new RTCSessionDescription({ type: "offer", sdp: offer.sdp }); 
         await peer.setRemoteDescription(desc);
-        const answer = await peer.createAnswer();
+        let answer = await peer.createAnswer();
         if (answer.sdp !== undefined) {
             await peer.setLocalDescription(answer);
             if (peer.remoteIceGatheringState === IceGatheringState.Complete) {
@@ -170,12 +170,12 @@ export default function createPool() {
     }
 
     let acceptAnswer = async (peerId, answer) => {
-        const peer = getPeer(peerId);
+        let peer = getPeer(peerId);
         if (peer === null) {
             send.error(new Error("No peer"));
             return;
         }
-        const desc = new RTCSessionDescription({ type: "answer", sdp: answer.sdp });
+        let desc = new RTCSessionDescription({ type: "answer", sdp: answer.sdp });
         await peer.setRemoteDescription(desc);
         if (peer.remoteIceGatheringState === IceGatheringState.Complete) {
             peer.flushCandidates();
@@ -184,7 +184,7 @@ export default function createPool() {
 
     addCandidate = async (peerId, candidateInfo) => {
         await mtx.lock();
-        const peer = ensurePeer(peerId);
+        let peer = ensurePeer(peerId);
         setPeer(peerId, peer);
         peer.remoteIceGatheringState = candidateInfo.gatheringState;
         // If true, candidateInfo.candidate is null so we don't add them
@@ -213,14 +213,14 @@ export default function createPool() {
         }
         if (!enabled) return;
 
-        const stream = await requestUserMedia(kind);
+        let stream = await requestUserMedia(kind);
         if (stream === null) return;
 
-        const tracks = kind === Track.Audio
+        let tracks = kind === Track.Audio
             ? stream.getAudioTracks()
             : stream.getVideoTracks();
 
-        const newTrack = tracks.at(0);
+        let newTrack = tracks.at(0);
         if (newTrack === undefined) {
             send.error(new Error("No track"));
             return;
@@ -231,7 +231,7 @@ export default function createPool() {
         newTrack.onended = () => {
             track[kind] = null;
             forEachPeer(peer => {
-                const sender = peer
+                let sender = peer
                     .getSenders()
                     .find(s => s.track?.id === newTrack.id);
 
@@ -251,11 +251,11 @@ export default function createPool() {
         addCandidate,
         removePeer,
         get localAudioEnabled() {
-            const track = this._track[Track.Audio];
+            let track = this._track[Track.Audio];
             return track !== null && track.enabled;
         },
         get localVideoEnabled() {
-            const track = this._track[Track.Video];
+            let track = this._track[Track.Video];
             return track !== null && track.enabled;
         },
         enableLocalAudio: () => setUserMedia(Track.Audio, true),
@@ -263,7 +263,7 @@ export default function createPool() {
         enableLocalVideo: () => setUserMedia(Track.Video, true),
         disableLocalVideo: () => setUserMedia(Track.Video, false),
         send: (peerId, data) => {
-            const peer = this._getPeer(peerId)
+            let peer = this._getPeer(peerId)
             peer?._channel.public.send(data);
         },
         sendToAll: data => {

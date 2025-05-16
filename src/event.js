@@ -12,12 +12,12 @@ class EventEmitter {
     }
 
     emit(type, detail) {
-        const ev = new CustomEvent(this._eventName(type), { detail });
+        let ev = new CustomEvent(this._eventName(type), { detail });
         window.dispatchEvent(ev);
     }
 
     map(schema) {
-        for (const event in schema) {
+        for (let event in schema) {
             this.on(event, schema[event]);
         }
     }

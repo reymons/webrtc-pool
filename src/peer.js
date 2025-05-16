@@ -15,7 +15,7 @@ export default class Peer extends RTCPeerConnection {
 
     flushCandidates() {
         if (!this._candidatesFlushed) {
-            for (const candidate of this._candidates) {
+            for (let candidate of this._candidates) {
                 this.addIceCandidate(candidate);
             }
             this._candidatesFlushed = true;
@@ -30,7 +30,7 @@ export default class Peer extends RTCPeerConnection {
     }
 
     replaceTrack(track) {
-        const oldTrack = this._stream
+        let oldTrack = this._stream
             .getTracks()
             .find(t => t.kind === track.kind);
         if (oldTrack) this._stream.removeTrack(oldTrack);
