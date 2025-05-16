@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "Manage WebRTC peer pool easily",
   "main": "src/lib.js",
+  "types": "types/lib.d.ts",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/reymons/webrtc-pool.git"

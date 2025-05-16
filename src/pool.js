@@ -1,373 +1,273 @@
-var WebRTC = (...args) => new WebRTC.WebRTC(...args);
+import Peer from "./peer";
+import Mutex from "./mutex";
+import EventEmitter from "./event";
+import { Event, Track, SelfId, IceGatheringState } from "./dict";
 
-(function (m) {
-    class WebRTCEventEmitter {
-        _eventHash = crypto.randomUUID().substring(0, 8);
-        
-        _eventName(type) {
-            return `__${this._eventHash}_${type}`;
-        }
-        
-        on(type, listener) {
-            window.addEventListener(this._eventName(type), e => {
-                listener(e.detail);
+function createEventSender() {
+    let event = new EventEmitter();
+
+    let body = (peerId, data) => {
+        data.peerId = peerId;
+        return data;
+    };
+
+    return {
+        event,
+        error(err) {
+            event.emit(Event.Error, err);
+        },
+        offer(peerId, offer) {
+            event.emit(Event.Offer, body(peerId, { offer }));
+        },
+        answer(peerId, answer) {
+            event.emit(Event.Answer, body(peerId, { answer }));
+        },
+        candidate(peerId, candidateInfo) {
+            event.emit(Event.Candidate, body(peerId, { candidateInfo }));
+        },
+        peerConnected(peerId) {
+            event.emit(Event.PeerConnected, body(peerId, {}));
+        },
+        peerDisconnected(peerId) {
+            event.emit(Event.PeerDisconnected, body(peerId, {}));
+        },
+        message(peerId, data) {
+            event.emit(Event.Message, body(peerId, { data }));
+        },
+        trackStateChanged(peerId, kind, enabled) {
+            event.emit(Event.TrackStateChanged, body(peerId, { kind, enabled }));
+        },
+        mediaStream(peerId, stream) {
+            event.emit(Event.MediaStream, body(peerId, { stream }));
+        },
+    }
+}
+
+export default function createPool() {
+    let peers = {};
+    let mtx = new Mutex();
+    let track = { audio: null, video: null };
+    let send = createEventSender();
+
+    let createPeer = id => {
+        const peer = new Peer(id, {
+            iceServers:  [
+                { urls: "stun:stun.l.google.com:19302" },
+                {
+                    urls: "turn:turn01.hubl.in?transport=udp",
+                    username: "user",
+                    credential: "123qwe"
+                }
+            ]
+        });
+        peer.onnegotiationneeded = () => {
+            // Re-make an offer only when there's an active connection.
+            // When a user gets in with, for example, their mic turned on,
+            // this event is still going be fired
+            // which will lead to makeOffer() called multiple times
+            if (peer.connectedTimes > 0) {
+                makeOffer(peer.id);
+            }
+        };
+        peer.ontrack = e => {
+            peer.replaceTrack(e.track);
+            send.mediaStream(peer.id, peer.stream);
+        };
+        peer.onicecandidate = e => {
+            send.candidate(peer.id, {
+                candidate: e.candidate,
+                gatheringState: peer.iceGatheringState,
             });
+        };
+        peer.onconnectionstatechange = () => {
+            if (peer.connectionState === "connected") {
+                if (peer.connectedTimes === 0) {
+                    send.peerConnected(peer.id);
+                }
+                peer.connectedTimes += 1;
+            }
+        };
+        return peer;
+    };
+
+    let getPeer = id => {
+        return peers[id] ?? null;
+    };
+    let setPeer = (id, peer) => {
+        peers[id] = peer;
+    };
+    let ensurePeer = id => {
+        return getPeer(id) ?? createPeer(id);
+    };
+    let removePeer = id => {
+        let peer = getPeer(id);
+        if (peer !== null) {
+            delete this._peers[id];
+            send.peerDisconnected(id);
         }
-    
-        emit(type, detail) {
-            const ev = new CustomEvent(this._eventName(type), { detail });
-            window.dispatchEvent(ev);
+    }
+    let forEachPeer = cb => {
+        for (const id in this._peers) {
+            cb(this._peers[id]);
         }
-    
-        map(schema) {
-            for (const event in schema) {
-                this.on(event, schema[event]);
+    }
+    let setPeerChannel = (peer, channel) => {
+        channel.onmessage = e => send.message(peer.id, e.data);
+        peer.channel.public = channel;
+    }
+
+    let requestUserMedia = kind => {
+        return navigator.mediaDevices.getUserMedia({ [kind]: true })
+            .catch(() => null);
+    }
+    let addTrackIfExists = (peer, kind) => {
+        if (this._track[kind] !== null) {
+            if (!peer.hasSender(kind)) {
+                peer.addTrack(this._track[kind]);
             }
         }
     }
-    
-    class WebRTCPeer extends RTCPeerConnection {
-        constructor(id, opts) {
-            super(opts);
-            this.id = id;
-            this._remoteIceGatheringState = WebRTC.IceGatheringState.New;
-            this._candidatesFlushed = false;
-            this._candidates = [];
-            this._stream = new MediaStream();
-            this._connectedTimes = 0;
-            this._channel = {
-                public: null,
-                private: null
-            };
-        }
-    
-        _flushCandidates() {
-            if (!this._candidatesFlushed) {
-                for (const candidate of this._candidates) {
-                    this.addIceCandidate(candidate);
-                }
-                this._candidatesFlushed = true;
-                this._candidates.length = 0;
-            }
-        }
-        
-        _hasSender(kind) {
-            return this.getSenders().some(sender => {
-                return sender.track !== null && sender.track.kind === kind;
-            });
-        }
 
-        _replaceTrack(track) {
-            const oldTrack = this._stream
-                .getTracks()
-                .find(t => t.kind === track.kind);
-            if (oldTrack) this._stream.removeTrack(oldTrack);
-            this._stream.addTrack(track);
+    let makeOffer = async peerId => {
+        const peer = ensurePeer(peerId);
+        if (peer.channel.public === null) {
+            setPeerChannel(peer, peer.createDataChannel("public"));
         }
-
-        get _hasConnectedOnce() {
-            return this._connectedTimes > 0;
+        addTrackIfExists(peer, Track.Audio);
+        addTrackIfExists(peer, Track.Video);
+        const offer = await peer.createOffer();
+        if (offer.sdp !== undefined) {
+            await peer.setLocalDescription(offer);
+            setPeer(peerId, peer);
+            send.offer(peerId, { sdp: offer.sdp });
+        } else {
+            send.error(new Error("No sdp"));
         }
     }
     
-    class WebRTC {
-        static Event = { 
-            Error: "error",
-            Offer: "offer",
-            Answer: "answer",
-            Candidate: "candidate",
-            PeerDisconnected: "peerdisconnected",
-            PeerConnected: "peerconnected",
-            MediaStream: "mediastream",
-            TrackStateChanged: "trackstatechanged",
-            Message: "message",
-        };
-        static IceGatheringState = {
-            New: "new",
-            Gathering: "gathering",
-            Complete: "complete",
-        };
-        static Track = {
-            Audio: "audio",
-            Video: "video",
-        };
-        static SelfId = "self";
-    
-        constructor() {
-            this._peers = {};
-            this._track = { audio: null, video: null };
-            this._mtx = new Mutex();
-            this.event = new WebRTCEventEmitter();
+    let acceptOffer = async (peerId, offer) => {
+        await mtx.lock();
+        const peer = ensurePeer(peerId);
+        if (peer.channel.public === null) {
+            peer.ondatachannel = e => setPeerChannel(peer, e.channel);
+        }
+        addTrackIfExists(peer, Track.Audio);
+        addTrackIfExists(peer, Track.Video);
+        const desc = new RTCSessionDescription({ type: "offer", sdp: offer.sdp }); 
+        await peer.setRemoteDescription(desc);
+        const answer = await peer.createAnswer();
+        if (answer.sdp !== undefined) {
+            await peer.setLocalDescription(answer);
+            if (peer.remoteIceGatheringState === IceGatheringState.Complete) {
+                peer.flushCandidates();
+            }
+            setPeer(peerId, peer);
+            send.answer(peerId, { sdp: answer.sdp });
+        } else {
+            send.error(new Error("No sdp"));
+        }
+        mtx.unlock();
+    }
+
+    let acceptAnswer = async (peerId, answer) => {
+        const peer = getPeer(peerId);
+        if (peer === null) {
+            send.error(new Error("No peer"));
+            return;
+        }
+        const desc = new RTCSessionDescription({ type: "answer", sdp: answer.sdp });
+        await peer.setRemoteDescription(desc);
+        if (peer.remoteIceGatheringState === IceGatheringState.Complete) {
+            peer.flushCandidates();
+        }
+    }
+
+    addCandidate = async (peerId, candidateInfo) => {
+        await mtx.lock();
+        const peer = ensurePeer(peerId);
+        setPeer(peerId, peer);
+        peer.remoteIceGatheringState = candidateInfo.gatheringState;
+        // If true, candidateInfo.candidate is null so we don't add them
+        if (candidateInfo.gatheringState === IceGatheringState.Complete) {
+            if (peer.signalingState === "have-remote-offer" ||
+                peer.signalingState === "have-remote-pranswer" ||
+                peer.signalingState === "stable"
+            ) {
+                peer.flushCandidates(peer);
+            }
+        } else {
+            peer.candidates.push(candidateInfo.candidate);
+        }
+        mtx.unlock();
+    }
+
+    let setUserMedia = async (kind, enabled) => {
+        if (kind !== Track.Audio && kind !== Track.Video) {
+            send.error(new Error("Invalid track kind"));
+            return;
+        }
+        if (track[kind] !== null) {
+            track[kind].enabled = enabled;
+            send.trackStateChanged(SelfId, kind, enabled);
+            return;
+        }
+        if (!enabled) return;
+
+        const stream = await requestUserMedia(kind);
+        if (stream === null) return;
+
+        const tracks = kind === Track.Audio
+            ? stream.getAudioTracks()
+            : stream.getVideoTracks();
+
+        const newTrack = tracks.at(0);
+        if (newTrack === undefined) {
+            send.error(new Error("No track"));
+            return;
         }
 
-        _emitTrackStateChanged(peerId, kind, enabled) {
-            this.event.emit(WebRTC.Event.TrackStateChanged, {
-                peerId,
-                kind,
-                enabled
+        track[kind] = newTrack;
+
+        newTrack.onended = () => {
+            track[kind] = null;
+            forEachPeer(peer => {
+                const sender = peer
+                    .getSenders()
+                    .find(s => s.track?.id === newTrack.id);
+
+                peer.removeTrack(sender);
+                send.trackStateChanged(SelfId, kind, false);
             });
         }
-        _emitError(error) {
-            this.event.emit(WebRTC.Event.Error, error);
-        }
 
-        _addTrackIfExists(peer, kind) {
-            if (this._track[kind] !== null) {
-                if (!peer._hasSender(kind)) {
-                    peer.addTrack(this._track[kind]);
-                }
-            }
-        }
+        forEachPeer(peer => peer.addTrack(newTrack));
+        send.trackStateChanged(SelfId, kind, true);
+    }
 
-        _requestUserMedia(kind) {
-            return navigator.mediaDevices.getUserMedia({ [kind]: true })
-                .catch(() => null);
-        }
-    
-        _createPeer(id) {
-            const peer = new WebRTCPeer(id, {
-                iceServers:  [
-                    { urls: "stun:stun.l.google.com:19302" },
-                    {
-                        urls: "turn:turn01.hubl.in?transport=udp",
-                        username: "user",
-                        credential: "123qwe"
-                    }
-                ]
-            });
-            peer.onnegotiationneeded = () => {
-                // Re-make an offer only when there's an active connection.
-                // When a user gets in with, for example, their mic turned on,
-                // this event is still going be fired
-                // which will lead to makeOffer() called multiple times
-                if (peer._connectedTimes > 0) {
-                    this.makeOffer(peer.id);
-                }
-            };
-            peer.ontrack = e => {
-                peer._replaceTrack(e.track);
-                this.event.emit(WebRTC.Event.MediaStream, {
-                    peerId: peer.id,
-                    stream: peer._stream
-                });
-            };
-            peer.onicecandidate = e => {
-                this.event.emit(WebRTC.Event.Candidate, {
-                    peerId: peer.id,
-                    candidateInfo: {
-                        candidate: e.candidate,
-                        gatheringState: peer.iceGatheringState
-                    }
-                });
-            };
-            peer.onconnectionstatechange = () => {
-                if (peer.connectionState === "connected") {
-                    if (peer._connectedTimes === 0) {
-                        this.event.emit(WebRTC.Event.PeerConnected, {
-                            peerId: peer.id
-                        });
-                    }
-                    peer._connectedTimes += 1;
-                }
-            };
-            return peer;
-        }
-        _getPeer(id) {
-            return this._peers[id] ?? null;
-        }
-        _setPeer(id, peer) {
-            this._peers[id] = peer;
-        }
-        _ensurePeer(id) {
-            return this._getPeer(id) ?? this._createPeer(id);
-        }
-        _forEachPeer(callback) {
-            for (const id in this._peers) {
-                callback(this._peers[id]);
-            }
-        }
-        _setPeerChannel(peer, channel) {
-            channel.onmessage = e => {
-                this.event.emit(WebRTC.Event.Message, {
-                    peerId: peer.id,
-                    data: e.data
-                });
-            };
-            peer._channel.public = channel;
-        }
-
-        removePeer(peerId) {
-            const peer = this._getPeer(peerId);
-            if (peer !== null) {
-                delete this._peers[peerId];
-                peer.onicecandidate = null;
-                peer.onconnectionstatechange = null;
-                peer.ontrack = null;
-                this.event.emit(WebRTC.Event.PeerDisconnected, { peerId });
-            }
-        }
-
-        async makeOffer(peerId) {
-            const peer = this._ensurePeer(peerId);
-            if (peer._channel.public === null) {
-                this._setPeerChannel(peer, peer.createDataChannel("public"));
-            }
-            this._addTrackIfExists(peer, WebRTC.Track.Audio);
-            this._addTrackIfExists(peer, WebRTC.Track.Video);
-            const offer = await peer.createOffer();
-            if (offer.sdp !== undefined) {
-                await peer.setLocalDescription(offer);
-                this._setPeer(peerId, peer);
-                this.event.emit(WebRTC.Event.Offer, {
-                    peerId,
-                    offer: { sdp: offer.sdp }
-                });
-            } else {
-                this._emitError(new Error("No sdp"));
-            }
-        }
-    
-        async acceptOffer(peerId, offer) {
-            await this._mtx.lock();
-            const peer = this._ensurePeer(peerId);
-            if (peer._channel.public === null) {
-                peer.ondatachannel = e => {
-                    this._setPeerChannel(peer, e.channel);
-                };
-            }
-            this._addTrackIfExists(peer, WebRTC.Track.Audio);
-            this._addTrackIfExists(peer, WebRTC.Track.Video);
-            const desc = new RTCSessionDescription({ type: "offer", sdp: offer.sdp }); 
-            await peer.setRemoteDescription(desc);
-            const answer = await peer.createAnswer();
-            if (answer.sdp !== undefined) {
-                await peer.setLocalDescription(answer);
-                if (peer._remoteIceGatheringState === WebRTC.IceGatheringState.Complete) {
-                    peer._flushCandidates();
-                }
-                this._setPeer(peerId, peer);
-                this.event.emit(WebRTC.Event.Answer, {
-                    peerId,
-                    answer: { sdp: answer.sdp }
-                });
-            } else {
-                this._emitError(new Error("No sdp"));
-            }
-            this._mtx.unlock();
-        }
-    
-        async acceptAnswer(peerId, answer) {
-            const peer = this._getPeer(peerId);
-            if (peer === null) {
-                this._emitError(new Error("No peer"));
-                return;
-            }
-            const desc = new RTCSessionDescription({ type: "answer", sdp: answer.sdp });
-            await peer.setRemoteDescription(desc);
-            if (peer._remoteIceGatheringState === WebRTC.IceGatheringState.Complete) {
-                peer._flushCandidates();
-            }
-        }
-    
-        async addCandidate(peerId, candidateInfo) {
-            await this._mtx.lock();
-            const peer = this._ensurePeer(peerId);
-            this._setPeer(peerId, peer);
-            peer._remoteIceGatheringState = candidateInfo.gatheringState;
-            // If true, candidateInfo.candidate is null so we don't add them
-            if (candidateInfo.gatheringState === WebRTC.IceGatheringState.Complete) {
-                if (peer.signalingState === "have-remote-offer" ||
-                    peer.signalingState === "have-remote-pranswer" ||
-                    peer.signalingState === "stable"
-                ) {
-                    peer._flushCandidates(peer);
-                }
-            } else {
-                peer._candidates.push(candidateInfo.candidate);
-            }
-            this._mtx.unlock();
-        }
-
-        async _setUserMedia(kind, enabled) {
-            if (kind !== WebRTC.Track.Audio && kind !== WebRTC.Track.Video) {
-                this._emitError(new Error("Invalid track kind"));
-                return;
-            }
-            if (this._track[kind] !== null) {
-                this._track[kind].enabled = enabled;
-                this._emitTrackStateChanged(WebRTC.SelfId, kind, enabled);
-                return;
-            }
-            if (!enabled) return;
-
-            const stream = await this._requestUserMedia(kind);
-            if (stream === null) return;
-
-            const tracks = kind === WebRTC.Track.Audio
-                ? stream.getAudioTracks()
-                : stream.getVideoTracks();
-
-            const newTrack = tracks.at(0);
-            if (newTrack === undefined) {
-                this._emitError(new Error("No track"));
-                return;
-            }
-
-            this._track[kind] = newTrack;
-            newTrack.onended = () => {
-                this._track[kind] = null;
-                this._forEachPeer(peer => {
-                    const sender = peer
-                        .getSenders()
-                        .find(s => s.track?.id === newTrack.id);
-                    peer.removeTrack(sender);
-                    this._emitTrackStateChanged(WebRTC.SelfId, kind, false);
-                });
-            }
-
-            this._forEachPeer(peer => peer.addTrack(newTrack));
-            this._emitTrackStateChanged(WebRTC.SelfId, kind, true);
-        }
-
+    return {
+        makeOffer,
+        acceptOffer,
+        acceptAnswer,
+        addCandidate,
+        removePeer,
         get localAudioEnabled() {
-            const track = this._track[WebRTC.Track.Audio];
+            const track = this._track[Track.Audio];
             return track !== null && track.enabled;
-        }
+        },
         get localVideoEnabled() {
-            const track = this._track[WebRTC.Track.Video];
+            const track = this._track[Track.Video];
             return track !== null && track.enabled;
-        }
-        enableLocalAudio() {
-            return this._setUserMedia(WebRTC.Track.Audio, true);
-        }
-        disableLocalAudio() {
-            return this._setUserMedia(WebRTC.Track.Audio, false);
-        }
-        enableLocalVideo() {
-            return this._setUserMedia(WebRTC.Track.Video, true);
-        }
-        disableLocalVideo() {
-            return this._setUserMedia(WebRTC.Track.Video, false);
-        }
-
-        send(peerId, data) {
+        },
+        enableLocalAudio: () => setUserMedia(Track.Audio, true),
+        disableLocalAudio: () => setUserMedia(Track.Audio, false),
+        enableLocalVideo: () => setUserMedia(Track.Video, true),
+        disableLocalVideo: () => setUserMedia(Track.Video, false),
+        send: (peerId, data) => {
             const peer = this._getPeer(peerId)
             peer?._channel.public.send(data);
-        }
-
-        sendToAll(data) {
-            this._forEachPeer(peer => peer._channel.public.send(data));
+        },
+        sendToAll: data => {
+            forEachPeer(peer => peer.channel.public.send(data));
         }
     }
-
-    Object.assign(m, {
-        WebRTC,
-        WebRTCEventEmitter,
-        WebRTCPeer,
-        Event: WebRTC.Event,
-        Track: WebRTC.Track,
-        SelfId: WebRTC.SelfId,
-    });
-})(WebRTC);
-
-
+}
