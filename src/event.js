@@ -1,31 +1,33 @@
-class EventEmitter {
-    _eventHash = crypto.randomUUID().substring(0, 8);
-    
-    _eventName(type) {
-        return `__${this._eventHash}_${type}`;
-    }
-    
-    on(type, listener) {
-        window.addEventListener(this._eventName(type), e => {
-            listener(e.detail);
-        });
+import { Event } from "./dict";
+
+function EventEmitter() {
+    let eventHash = crypto.randomUUID().substring(0, 8);
+    let eventName = type => `__${eventHash}_${type}`;
+
+    let on = (type, listener) => {
+        let event = eventName(type);
+        let handler = e => listener(e.detail);
+        window.addEventListener(event, handler);
+        return () => window.removeEventListener(event, handler);
     }
 
-    emit(type, detail) {
-        let ev = new CustomEvent(this._eventName(type), { detail });
+    let emit = (type, detail) => {
+        let ev = new CustomEvent(eventName(type), { detail });
         window.dispatchEvent(ev);
     }
 
-    map(schema) {
+    let map = (schema) => {
         for (let event in schema) {
-            this.on(event, schema[event]);
+            on(event, schema[event]);
         }
     }
+
+    return { on, emit, map };
 }
 
-export default function createEventSender() {
-    let event = new EventEmitter();
-
+export default function EventSender() {
+    let event = EventEmitter();
+    
     let body = (peerId, data) => {
         data.peerId = peerId;
         return data;
