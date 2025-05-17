@@ -1,5 +1,6 @@
 {
   "name": "webrtc-pool",
+  "type": "module",
   "version": "0.0.1",
   "description": "Manage WebRTC peer pool easily",
   "main": "src/index.js",
@@ -18,7 +19,20 @@
     "url": "https://github.com/reymons/webrtc-pool/issues"
   },
   "homepage": "https://github.com/reymons/webrtc-pool#readme",
+  "jest": {
+    "setupFiles": [
+      "./jest.setup.js"
+    ],
+    "transform": {},
+    "testEnvironment": "jsdom"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
   }
 }
