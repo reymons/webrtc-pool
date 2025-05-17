@@ -1,4 +1,4 @@
-import Mutex from "../src/mutex";
+import { Mutex } from "../src/mutex";
 
 describe("Mutex", () => {
     it("locks and awaits until unlocked", () => {

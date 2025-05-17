@@ -1,4 +1,4 @@
-export default class Mutex {
+export class Mutex {
     constructor() {
         this._locked = false;
         this._resolvers = [];
