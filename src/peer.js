@@ -1,8 +1,10 @@
+import { IceGatheringState } from "./dict";
+
 export default class Peer extends RTCPeerConnection {
     constructor(id, opts) {
         super(opts);
         this.id = id;
-        this.remoteIceGatheringState = WebRTC.IceGatheringState.New;
+        this.remoteIceGatheringState = IceGatheringState.New;
         this.candidatesFlushed = false;
         this.candidates = [];
         this.stream = new MediaStream();
@@ -14,12 +16,12 @@ export default class Peer extends RTCPeerConnection {
     }
 
     flushCandidates() {
-        if (!this._candidatesFlushed) {
-            for (let candidate of this._candidates) {
+        if (!this.candidatesFlushed) {
+            for (let candidate of this.candidates) {
                 this.addIceCandidate(candidate);
             }
-            this._candidatesFlushed = true;
-            this._candidates.length = 0;
+            this.candidatesFlushed = true;
+            this.candidates.length = 0;
         }
     }
     
@@ -30,15 +32,15 @@ export default class Peer extends RTCPeerConnection {
     }
 
     replaceTrack(track) {
-        let oldTrack = this._stream
+        let oldTrack = this.stream
             .getTracks()
             .find(t => t.kind === track.kind);
-        if (oldTrack) this._stream.removeTrack(oldTrack);
-        this._stream.addTrack(track);
+        if (oldTrack) this.stream.removeTrack(oldTrack);
+        this.stream.addTrack(track);
     }
 
     get hasConnectedOnce() {
-        return this._connectedTimes > 0;
+        return this.connectedTimes > 0;
     }
 }
 

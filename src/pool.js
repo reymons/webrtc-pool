@@ -1,13 +1,34 @@
 import Peer from "./peer";
-import Mutex from "./mutex";
-import EventSender from "./event";
+import { Mutex } from "./mutex";
+import { EventSender } from "./event";
 import { Track, SelfId, IceGatheringState } from "./dict";
+import { is, validate } from "./utils";
 
-export default function Pool() {
+export function Pool() {
     let peers = {};
     let mtx = new Mutex();
     let track = { audio: null, video: null };
     let send = EventSender();
+
+    let sendError = e => {
+        let err = e instanceof Error ? e : new Error("Unknown error");
+        send.error(err);
+    };
+
+    let errorBoundary = (cb, errorCb = null) => {
+        try {
+            let val = cb();
+            if (is.promise(val)) {
+                val.catch(err => {
+                    sendError(err);
+                    errorCb?.();
+                });
+            }
+        } catch (err) {
+            sendError(err);
+            errorCb?.();
+        }
+    };
 
     let createPeer = id => {
         let peer = new Peer(id, {
@@ -31,7 +52,7 @@ export default function Pool() {
         };
         peer.ontrack = e => {
             peer.replaceTrack(e.track);
-            send.mediaStream(peer.id, peer.stream);
+            send.mediastream(peer.id, peer.stream);
         };
         peer.onicecandidate = e => {
             send.candidate(peer.id, {
@@ -42,7 +63,7 @@ export default function Pool() {
         peer.onconnectionstatechange = () => {
             if (peer.connectionState === "connected") {
                 if (peer.connectedTimes === 0) {
-                    send.peerConnected(peer.id);
+                    send.peerconnected(peer.id);
                 }
                 peer.connectedTimes += 1;
             }
@@ -62,13 +83,14 @@ export default function Pool() {
     let removePeer = id => {
         let peer = getPeer(id);
         if (peer !== null) {
-            delete this._peers[id];
-            send.peerDisconnected(id);
+            delete peers[id];
+            peer.close();
+            send.peerdisconnected(id);
         }
     }
     let forEachPeer = cb => {
-        for (let id in this._peers) {
-            cb(this._peers[id]);
+        for (let id in peers) {
+            cb(peers[id]);
         }
     }
     let setPeerChannel = (peer, channel) => {
@@ -81,14 +103,17 @@ export default function Pool() {
             .catch(() => null);
     }
     let addTrackIfExists = (peer, kind) => {
-        if (this._track[kind] !== null) {
+        if (track[kind] !== null) {
             if (!peer.hasSender(kind)) {
-                peer.addTrack(this._track[kind]);
+                peer.addTrack(track[kind]);
             }
         }
     }
 
-    let makeOffer = async peerId => {
+    let _makeOffer = async peerId => {
+        if (!validate.peerId(peerId)) {
+            throw new Error("Invalid peerId");
+        }
         let peer = ensurePeer(peerId);
         if (peer.channel.public === null) {
             setPeerChannel(peer, peer.createDataChannel("public"));
@@ -101,11 +126,20 @@ export default function Pool() {
             setPeer(peerId, peer);
             send.offer(peerId, { sdp: offer.sdp });
         } else {
-            send.error(new Error("No sdp"));
+            throw new Error("No sdp");
         }
     }
+    let makeOffer = peerId => {
+        errorBoundary(() => _makeOffer(peerId));
+    };
     
-    let acceptOffer = async (peerId, offer) => {
+    let _acceptOffer = async (peerId, offer, _mtx) => {
+        if (!validate.peerId(peerId)) {
+            throw new Error("Invalid peer id");
+        }
+        if (!validate.offer(offer)) {
+            throw new Error("Invalid offer");
+        }
         await mtx.lock();
         let peer = ensurePeer(peerId);
         if (peer.channel.public === null) {
@@ -128,21 +162,28 @@ export default function Pool() {
         }
         mtx.unlock();
     }
+    let acceptOffer = (peerId, offer) => {
+        errorBoundary(
+            () => _acceptOffer(peerId, offer),
+            // If throws, unlock mutex here, otherwise it's gonna be locked forevah
+            () => mtx.unlock(),
+        );
+    };
 
-    let acceptAnswer = async (peerId, answer) => {
+    let _acceptAnswer = async (peerId, answer) => {
         let peer = getPeer(peerId);
-        if (peer === null) {
-            send.error(new Error("No peer"));
-            return;
-        }
+        if (peer === null) throw new Error("No peer");
         let desc = new RTCSessionDescription({ type: "answer", sdp: answer.sdp });
         await peer.setRemoteDescription(desc);
         if (peer.remoteIceGatheringState === IceGatheringState.Complete) {
             peer.flushCandidates();
         }
-    }
+    };
+    let acceptAnswer = (peerId, answer) => {
+        errorBoundary(() => _acceptAnswer(peerId, answer));
+    };
 
-    addCandidate = async (peerId, candidateInfo) => {
+    let addCandidate = async (peerId, candidateInfo) => {
         await mtx.lock();
         let peer = ensurePeer(peerId);
         setPeer(peerId, peer);
@@ -168,7 +209,7 @@ export default function Pool() {
         }
         if (track[kind] !== null) {
             track[kind].enabled = enabled;
-            send.trackStateChanged(SelfId, kind, enabled);
+            send.trackstatechanged(SelfId, kind, enabled);
             return;
         }
         if (!enabled) return;
@@ -196,15 +237,16 @@ export default function Pool() {
                     .find(s => s.track?.id === newTrack.id);
 
                 peer.removeTrack(sender);
-                send.trackStateChanged(SelfId, kind, false);
+                send.trackstatechanged(SelfId, kind, false);
             });
         }
 
         forEachPeer(peer => peer.addTrack(newTrack));
-        send.trackStateChanged(SelfId, kind, true);
+        send.trackstatechanged(SelfId, kind, true);
     }
 
     return {
+        event: send.event,
         makeOffer,
         acceptOffer,
         acceptAnswer,
