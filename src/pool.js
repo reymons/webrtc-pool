@@ -1,8 +1,8 @@
-import Peer from "./peer";
-import { Mutex } from "./mutex";
-import { EventSender } from "./event";
-import { Track, SelfId, IceGatheringState } from "./dict";
-import { is, validate } from "./utils";
+import { Peer } from "./peer.js";
+import { Mutex } from "./mutex.js";
+import { EventSender } from "./event.js";
+import { Track, SelfId, IceGatheringState } from "./dict.js";
+import { is, validate } from "./utils.js";
 
 export function Pool() {
     let peers = {};
@@ -87,6 +87,9 @@ export function Pool() {
             peer.close();
             send.peerdisconnected(id);
         }
+    }
+    let removeAllPeers = () => {
+        forEachPeer(peer => removePeer(peer.id));
     }
     let forEachPeer = cb => {
         for (let id in peers) {
@@ -252,13 +255,14 @@ export function Pool() {
         acceptAnswer,
         addCandidate,
         removePeer,
+        removeAllPeers,
         get localAudioEnabled() {
-            let track = track[Track.Audio];
-            return track !== null && track.enabled;
+            let t = track[Track.Audio];
+            return t !== null && t.enabled;
         },
         get localVideoEnabled() {
-            let track = track[Track.Video];
-            return track !== null && track.enabled;
+            let t = track[Track.Video];
+            return t !== null && t.enabled;
         },
         enableLocalAudio: () => { setUserMedia(Track.Audio, true) },
         disableLocalAudio: () => { setUserMedia(Track.Audio, false) },

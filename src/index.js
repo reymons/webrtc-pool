@@ -1,5 +1,5 @@
-import Pool from "./pool";
-import { Event, Track, SelfId } from "./dict";
+import { Pool } from "./pool.js";
+import { Event, Track, SelfId } from "./dict.js";
 
 export const PoolEvent = Event;
 export const Track = Track;

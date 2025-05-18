@@ -1,4 +1,4 @@
-import { Event } from "./dict";
+import { Event } from "./dict.js";
 
 export function EventEmitter() {
     let listeners = {};

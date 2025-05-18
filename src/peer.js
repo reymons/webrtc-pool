@@ -1,6 +1,6 @@
-import { IceGatheringState } from "./dict";
+import { IceGatheringState } from "./dict.js";
 
-export default class Peer extends RTCPeerConnection {
+export class Peer extends RTCPeerConnection {
     constructor(id, opts) {
         super(opts);
         this.id = id;
