@@ -1,12 +1,10 @@
-import { EventEmitter, EventSender } from "../src/event";
-import { Event } from "../src/dict";
-import crypto from "crypto";
+import { EventEmitter } from "../src/emitter.js";
 
 describe("event/EventEmitter", () => {
     let emitter;
 
     beforeEach(() => {
-        emitter = EventEmitter();
+        emitter = new EventEmitter();
     });
 
     it("emits event with correct data", () => {
@@ -61,29 +59,6 @@ describe("event/EventEmitter", () => {
         expect(handler).toHaveBeenCalledTimes(0);
     });
 
-    it("calls each mapped listener with correct data", () => {
-        let fn1 = jest.fn(), ev1 = "aaa", data1 = [1, 2, 3];
-        let fn2 = jest.fn(), ev2 = "bbb", data2 = { a: 1, b: 2, c: 3 };
-        emitter.map({ [ev1]: fn1, [ev2]: fn2 });
-        emitter.emit(ev1, data1);
-        emitter.emit(ev2, data2);
-        expect(fn1).toHaveBeenCalledTimes(1);
-        expect(fn1).toHaveBeenCalledWith(data1);
-        expect(fn2).toHaveBeenCalledTimes(1);
-        expect(fn2).toHaveBeenCalledWith(data2);
-    });
-
-    it("removes listeners when calling off() returned by map()", () => {
-        let fn1 = jest.fn(), ev1 = "aaa";
-        let fn2 = jest.fn(), ev2 = "bbb";
-        let off = emitter.map({ [ev1]: fn1, [ev2]: fn2 });
-        off();
-        emitter.emit(ev1, null);
-        emitter.emit(ev2, null);
-        expect(fn1).toHaveBeenCalledTimes(0);
-        expect(fn2).toHaveBeenCalledTimes(0);
-    });
-
     it("allows to call off() multiple times of the same on() call", () => {
         let off = emitter.on("abc", () => {});
         off();
@@ -100,33 +75,5 @@ describe("event/EventEmitter", () => {
         emitter.off(event, listener);
         emitter.off(event, listener);
         emitter.off(event, listener);
-    });
-});
-
-describe("event/EventSender", () => {
-    let sender = EventSender();
-
-    let forEachEvent = (cb) => {
-        let peerId = crypto.randomUUID().substring(0, 8);
-
-        for (let event of Object.values(Event)) {
-            cb(event, peerId, Event[event]);
-        }
-    };
-
-    forEachEvent((event, peerId, data) => {
-        it(`emits ${event} event with correct data only once`, () => {
-            let listener = jest.fn();
-            sender.event.on(event, listener);
-            if (event === Event.Error) {
-                sender[event](data);
-                expect(listener).toHaveBeenCalledTimes(1);
-                expect(listener).toHaveBeenCalledWith(data);
-            } else {
-                sender[event](peerId, data);
-                expect(listener).toHaveBeenCalledTimes(1);
-                expect(listener).toHaveBeenCalledWith({ peerId, data });
-            }
-        });
     });
 });

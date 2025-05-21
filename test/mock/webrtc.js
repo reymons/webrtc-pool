@@ -35,6 +35,12 @@ class MockRTCPeerConnection {
     async setLocalDescription() {}
 
     async setRemoteDescription() {}
+
+    addTransceiver() {}
+
+    getTransceivers() {
+        return [];
+    }
 }
 
 export function mockWebRTC() {

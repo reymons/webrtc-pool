@@ -1,12 +1,12 @@
 import crypto from "crypto";
-import { Event } from "../src/dict";
-import { types } from "./__utils__";
-import { mockWebRTC } from "./mock/webrtc";
-import { mockMediaStream } from "./mock/mediaStream";
+import { PoolEvent } from "../src/dict.js";
+import { types } from "./__utils__.js";
+import { mockWebRTC } from "./mock/webrtc.js";
+import { mockMediaStream } from "./mock/mediaStream.js";
 
 mockWebRTC();
 mockMediaStream();
-let { Pool } = await import("../src/pool");
+let { Pool } = await import("../src/pool.js");
 
 describe("Pool", () => {
     describe("connection flow", () => {
@@ -14,12 +14,15 @@ describe("Pool", () => {
         let peerId;
 
         beforeEach(() => {
-            pool = Pool();
+            pool = new Pool();
+            pool.on(PoolEvent.Error, error => {
+                throw error;
+            });
             peerId = crypto.randomUUID().substring(0, 8);
         });
 
         it("create offer and sends 'offer' event with correct data", done => {
-            pool.event.on(Event.Offer, data => {
+            pool.on(PoolEvent.Offer, data => {
                 expect(data).toStrictEqual({
                     peerId: types.peerId,
                     offer: types.offer
@@ -31,7 +34,7 @@ describe("Pool", () => {
 
         it("creates answer and sends 'answer' event with correct data", done => {
             let offerListener = jest.fn(data => {
-                pool.acceptOffer(data.peerId, data.offer);
+                pool.acceptOffer(data.offer, data.peerId);
             });
             let answerListener = jest.fn(data => {
                 expect(offerListener).toHaveBeenCalledTimes(1);
@@ -41,12 +44,10 @@ describe("Pool", () => {
                 });
                 done();
             });
-            pool.event.on(Event.Offer, offerListener);
-            pool.event.on(Event.Answer, answerListener);
+            pool.on(PoolEvent.Offer, offerListener);
+            pool.on(PoolEvent.Answer, answerListener);
             pool.makeOffer(peerId);
         });
-
-        // Really no point in further mock testing here. Switching to e2e :p
     });
 });
 
