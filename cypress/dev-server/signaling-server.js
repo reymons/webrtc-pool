@@ -60,12 +60,12 @@ class Room {
         }
     }
  
-    sendCandidateTo(connId, fromConnId, candidateInfo) {
+    sendCandidateTo(connId, fromConnId, candidate) {
         let conn = this.#conns.get(connId);
         if (conn === undefined) {
             this.sendErrorTo(fromConnId, "No peer with such an id");
         } else {
-            conn.send("candidate", { peerId: fromConnId, candidateInfo });
+            conn.send("candidate", { peerId: fromConnId, candidate });
         }
     }
 }
@@ -82,7 +82,7 @@ function onMessage(messageData, ctx) {
             room.sendAnswerTo(data.peerId, conn.id, data.answer);
             break;
         case "candidate":
-            room.sendCandidateTo(data.peerId, conn.id, data.candidateInfo);
+            room.sendCandidateTo(data.peerId, conn.id, data.candidate);
             break;
         default:
             conn.sendError("Invalid type");

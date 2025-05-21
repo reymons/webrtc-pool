@@ -19,7 +19,7 @@ fastify.register(import("@fastify/static"), {
     prefix: "/static",
 });
 fastify.register(import("@fastify/static"), {
-    root: path.join(dirname, "..", "src"),
+    root: path.join(dirname, "..", "..", "src"),
     prefix: "/lib",
     decorateReply: false,
 });

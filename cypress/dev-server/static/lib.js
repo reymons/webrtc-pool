@@ -1,4 +1,3 @@
-import { Event } from "/lib/dict.js";
 import { Pool } from "/lib/pool.js";
 
 export class SignalingServer {
@@ -6,7 +5,6 @@ export class SignalingServer {
         this._socket = null;
         this._url = url;
         this._onMessage = null;
-
     }
 
     set onMessage(value) {
@@ -20,16 +18,16 @@ export class SignalingServer {
         this._socket.send(JSON.stringify({ type, data }));
     }
 
-    sendOffer(peerId, offer) {
-        this._send("offer", { peerId, offer });
+    sendOffer(offer, peerId) {
+        this._send("offer", { offer, peerId });
     }
 
-    sendAnswer(peerId, answer) {
-        this._send("answer", { peerId, answer });
+    sendAnswer(answer, peerId) {
+        this._send("answer", { answer, peerId });
     }
 
-    sendCandidateInfo(peerId, candidateInfo) {
-        this._send("candidate", { peerId, candidateInfo });
+    sendCandidate(candidate, peerId) {
+        this._send("candidate", { candidate, peerId });
     }
 
     start() {
@@ -50,9 +48,8 @@ export class Room {
     constructor(id, sigServer) {
         this.id = id;
         this._sigServer = sigServer;
-        this.pool = Pool();
-        this._peers = new Set();
-        this._removePoolListener = null;
+        this.pool = new Pool();
+        this._removePoolListeners = null;
     }
 
     _onSigServerMessage(message) {
@@ -63,56 +60,77 @@ export class Room {
                 data.peerIds.forEach(id => this.pool.makeOffer(id));
                 break;
             case "offer":
-                this.pool.acceptOffer(data.peerId, data.offer);
+                this.pool.acceptOffer(data.offer, data.peerId);
                 break;
             case "answer":
-                this.pool.acceptAnswer(data.peerId, data.answer);
+                this.pool.acceptAnswer(data.answer, data.peerId);
                 break;
             case "candidate":
-                this.pool.addCandidate(data.peerId, data.candidateInfo);
+                this.pool.addCandidate(data.candidate, data.peerId);
                 break;
             case "disconnect":
-                this.pool.removePeer(data.peerId);
+                this.pool.closePeer(data.peerId);
                 break;
         }
     }
 
     enter() {
-        this._removePoolListener = this.pool.event.map({
-            [Event.Offer]: ({ peerId, offer }) => {
-                this._sigServer.sendOffer(peerId, offer);
-            },
-            [Event.Answer]: ({ peerId, answer }) => {
-                this._sigServer.sendAnswer(peerId, answer);
-            },
-            [Event.Candidate]: ({ peerId, candidateInfo }) => {
-                this._sigServer.sendCandidateInfo(peerId, candidateInfo);
-            },
-        });
+        let removeListenerFns = [
+            this.pool.on("offer", ({ offer, peerId }) => {
+                this._sigServer.sendOffer(offer, peerId);
+            }),
+            this.pool.on("answer", ({ answer, peerId }) => {
+                this._sigServer.sendAnswer(answer, peerId);
+            }),
+            this.pool.on("candidate", ({ candidate, peerId }) => {
+                this._sigServer.sendCandidate(candidate, peerId);
+            }),
+            this.pool.on("error", error => console.error(error))
+        ];
 
-        this._sigServer.onMessage = data => this._onSigServerMessage(data);
+        this._removePoolListeners = () => {
+            removeListenerFns.forEach(fn => fn());
+        };
+
+        this._sigServer.onMessage = data => {
+            this._onSigServerMessage(data);
+        };
+
         this._sigServer.start();
     }
 
     exit() {
         this._sigServer.stop();
-        this._removePoolListener?.();
-        this.pool.removeAllPeers();
+        this._removePoolListeners?.();
+        this.pool.closeAllPeers();
     }
 }
 
 class GuestView {
+    constructor(peer) {
+        this._peer = peer;
+    }
+
     render(root) {
         let temp = document.querySelector("template#guest");
         let doc = temp.content.cloneNode(true);
+    
         this._video = doc.querySelector("video");
+        this._video.srcObject = this._peer.remoteStream;
         this._node = doc.firstElementChild;
-        root.appendChild(doc);
-    }
 
-    attachStream(s) {
-        this._video.srcObject = s;
-        this._video.play();
+        doc.getElementById("btn-remote-audio").onclick = () => {
+            this._peer.toggleRemoteAudio();
+        };
+        doc.getElementById("btn-remote-video").onclick = () => {
+            this._peer.toggleRemoteVideo();
+        };
+
+        root.appendChild(doc);
+
+        requestAnimationFrame(() => {
+            this._video.play().catch(console.error);
+        });
     }
 
     remove() {
@@ -124,7 +142,6 @@ export class RoomView {
     constructor(room) {
         this._room = room;
         this._connected = false;
-        this._guests = new Map();
     }
 
     render() {
@@ -134,26 +151,17 @@ export class RoomView {
         let btnMic = doc.getElementById("btn-mic");
         let btnCam = doc.getElementById("btn-cam");
         let btnConnect = doc.getElementById("btn-connect");
-        let { pool } = this._room;
+        let pool = this._room.pool;
         
-        btnMic.onclick = () => {
-            if (pool.localAudioEnabled) {
-                pool.disableLocalAudio();
-            } else {
-                pool.enableLocalAudio();
-            }
-        };
-        btnCam.onclick = () => {
-            let { pool } = this._room;
-            if (pool.localVideoEnabled) {
-                pool.disableLocalVideo();
-            } else {
-                pool.enableLocalVideo();
-            }
-        };
+        btnMic.onclick = () => pool.toggleLocalAudio();
+        btnCam.onclick = () => pool.toggleLocalVideo();
         btnConnect.onclick = () => {
             let connected = this._connected;
-            if (connected) this._room.exit();
+            if (connected) {
+                this._room.exit();
+                pool.toggleLocalAudio(false);
+                pool.toggleLocalVideo(false);
+            }
             else this._room.enter();
             connected = !connected;
             btnMic.disabled = !connected;
@@ -162,21 +170,13 @@ export class RoomView {
             this._connected = connected;
         };
 
-        pool.event.map({
-            [Event.PeerConnected]: ({ peerId }) => {
-                let guestView = new GuestView();
-                guestView.render(node.querySelector("#guests"));
-                this._guests.set(peerId, guestView);
-            },
-            [Event.PeerDisconnected]: ({ peerId }) => {
-                let guestView = this._guests.get(peerId);
+        pool.on("connection", (peer) => {
+            let guestView = new GuestView(peer);
+            guestView.render(node.querySelector("#guests"));
+
+            peer.on("disconnect", () => {
                 guestView.remove();
-                this._guests.delete(peerId);
-            },
-            [Event.MediaStream]: ({ peerId, stream }) => {
-                let guestView = this._guests.get(peerId);
-                guestView?.attachStream(stream);
-            },
+            });
         });
 
         node.setAttribute("id", this._room.id);

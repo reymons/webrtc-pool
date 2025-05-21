@@ -9,3 +9,4 @@ function createRoomView(roomId) {
 
 createRoomView("room-1").render();
 createRoomView("room-2").render();
+createRoomView("room-3").render();
