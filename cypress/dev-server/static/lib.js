@@ -114,17 +114,25 @@ class GuestView {
     render(root) {
         let temp = document.querySelector("template#guest");
         let doc = temp.content.cloneNode(true);
+        let peer = this._peer;
     
         this._video = doc.querySelector("video");
-        this._video.srcObject = this._peer.remoteStream;
+        this._video.srcObject = peer.remoteStream;
         this._node = doc.firstElementChild;
 
         doc.getElementById("btn-remote-audio").onclick = () => {
-            this._peer.toggleRemoteAudio();
+            peer.toggleRemoteAudio();
         };
         doc.getElementById("btn-remote-video").onclick = () => {
-            this._peer.toggleRemoteVideo();
+            peer.toggleRemoteVideo();
         };
+
+        let micStatus = doc.getElementById("status-mic");
+        let camStatus = doc.getElementById("status-cam");
+        peer.on("remotemediachange", () => {
+            micStatus.innerText = peer.remoteAudioEnabled ? "Mic on" : "Mic off";
+            camStatus.innerText = peer.remoteVideoEnabled ? "Cam on" : "Cam off";
+        });
 
         root.appendChild(doc);
 

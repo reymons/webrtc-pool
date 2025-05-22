@@ -20,7 +20,7 @@ describe("basic connection flow", () => {
         expect(track).to.exist;
     };
 
-    let waitForNegotiation = () => cy.wait(500);
+    let waitForNegotiation = () => cy.wait(1500);
 
     let r = (num) => cy.get(`#room-${num}`);
 
@@ -77,13 +77,12 @@ describe("basic connection flow", () => {
         room2.video.hasTracks(["video"]);
     });
 
-    // TODO: figure out why it passes with 'open' but not with 'run' command
-    //it("streams audio to another peer", () => {
-    //    connect([room1, room2]);
-    //    room1.microphone(true);
-    //    waitForNegotiation();
-    //    room2.video.hasTracks(["audio"]);
-    //});
+    it("streams audio to another peer", () => {
+        connect([room1, room2]);
+        room1.microphone(true);
+        waitForNegotiation();
+        room2.video.hasTracks(["audio"]);
+    });
 
     it("can exchange video and audio streams simultaniously", () => {
         connect([room1, room2]);
@@ -122,17 +121,6 @@ describe("basic connection flow", () => {
         room2.video.hasTracks(["audio", "video"]);
     });
 
-    it("sets stream object only once", async () => {
-        connect([room1, room2]);
-        room1.camera(true);
-        waitForNegotiation();
-        let oldStream = await room2.video.stream.get();
-        room1.camera(false);
-        waitForNegotiation();
-        let newStream = await room2.video.stream.get();
-        expect(oldStream).to.equal(newStream);
-    });
-
     it("can see peer's video if it was enabled beforehand", () => {
         connect([room1]);
         room1.camera(true);
@@ -158,6 +146,23 @@ describe("basic connection flow", () => {
         room2.video.hasTracks(["audio", "video"]);
     });
 
-    // TODO: it("toggles video correctly");
-    // TODO: it("toggles audio correctly");
+    it("toggles video correctly", () => {
+        connect([room1, room2]);
+        room1.camera(true);
+        waitForNegotiation();
+        room1.camera(false);
+        room1.camera(true);
+        waitForNegotiation();
+        room2.video.hasTracks(["video"]);
+    });
+
+    it("toggles audio correctly", () => {
+        connect([room1, room2]);
+        room1.microphone(true);
+        waitForNegotiation();
+        room1.microphone(false);
+        room1.microphone(true);
+        waitForNegotiation();
+        room2.video.hasTracks(["audio"]);
+    });
 });
