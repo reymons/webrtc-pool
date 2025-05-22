@@ -9,6 +9,8 @@ export const sEventData = Symbol("_eventData");
 // Peer
 export const sFlushCandidates = Symbol("_flushCandidates");
 export const sSetChannel = Symbol("_setChannel");
+export const sSend = Symbol("_send");
+export const sClose = Symbol("_close");
 
 // Pool
 export const sCreatePeer = Symbol("_createPeer");
@@ -24,8 +26,11 @@ export const PoolEvent = Object.freeze({
 });
 
 export const PeerEvent = Object.freeze({
+    Error: "error",
     Disconnect: "disconnect",
     Message: "message",
+    RemoteMediaChange: "remotemediachange",
+    LocalMediaChange: "localmediachange"
 });
 
 export const MediaKind = Object.freeze({
@@ -37,3 +42,11 @@ export const ChannelEvent = Object.freeze({
     MediaState: "mediastate",
     UserMessage: "usermessage",
 });
+
+export const PoolPeerEvent = Object.freeze({
+    Connection: "pool_connection",
+    Disconnect: "pool_disconnect",
+    Candidate: "pool_candidate",
+    MediaState: "pool_mediastate",
+})
+

@@ -1,9 +1,10 @@
 import { EventEmitter } from "./emitter.js";
-import { Peer } from "./peer.js";
+import { AbstractPeer, Peer } from "./peer.js";
 import {
-    PoolEvent, ChannelEvent, MediaKind, PeerEvent,
-    sData, sCreatePeer, sEnsurePeer, sForEachPeer,
+    PoolEvent, ChannelEvent, MediaKind,
+    sData, sCreatePeer, sEnsurePeer, sForEachPeer, sSend,
     sSetChannel, sFlushCandidates, sToggleLocalMedia,
+    PoolPeerEvent,
 } from "./dict.js";
 import { requestUserMediaStream, validate } from "./utils.js";
 
@@ -21,33 +22,25 @@ export class Pool extends EventEmitter {
         }
     }
 
-    [sCreatePeer](id) {
-        let peer = new Peer(id);
-        let peerData = peer[sData];
-        let conn = peerData.conn;
+    [sCreatePeer](id, abstract = false) {
+        let peer = abstract ? new AbstractPeer(id) : new Peer(id);
         this[sData].peers[id] = peer;
 
-        conn.oniceconnectionstatechange = () => {
-            if (conn.iceConnectionState === "connected") {
-                if (peerData.connectedTimes === 0) {
-                    this.emit(PoolEvent.Connection, peer);
-                }
-                peerData.connectedTimes += 1;
-            }
-        };
-        conn.onicecandidate = (e) => {
-            this.emit(PoolEvent.Candidate, {
-                peerId: peer.id,
-                candidate: e.candidate,
-            });
-        };
+        peer.on(PoolPeerEvent.Connection, () => {
+            this.emit(PoolEvent.Connection, peer);
+        });
 
-        peer.on(ChannelEvent.MediaState, ({ kind, enabled }) => {
-            this[sForEachPeer](() => {
-                peerData.channel?.send(JSON.stringify({
-                    type: ChannelEvent.MediaState,
-                    data: { kind, enabled }
-                }));
+        peer.on(PoolPeerEvent.Candidate, (candidate) => {
+            this.emit(PoolEvent.Candidate, { peerId: peer.id, candidate });
+        });
+
+        peer.on(PoolPeerEvent.Disconnect, () => {
+            Reflect.deleteProperty(this[sData].peers, peer.id);
+        });
+
+        peer.on(PoolPeerEvent.MediaState, ({ kind, enabled }) => {
+            this[sForEachPeer](peer => {
+                peer[sSend](ChannelEvent.MediaState, { kind, enabled });
             });
         });
 
@@ -64,19 +57,22 @@ export class Pool extends EventEmitter {
     }
 
     closePeer(id) {
-        if (validate.peerId(id)) {
-            let peers = this[sData].peers;
-            let peer = peers[id];
-            if (peer !== undefined) {
-                peer[sData].conn.close();
-                peer.emit(PeerEvent.Disconnect, peer);
-                delete peers[id];
-            }
-        }
+        let peer = this[sData].peers[id];
+        peer?.close();
     }
 
     closeAllPeers() {
-        this[sForEachPeer](peer => this.closePeer(peer.id));
+        this[sForEachPeer](peer => peer.close());
+    }
+
+    connectAbstractPeer(id) {
+        if (id !== undefined && !validate.peerId(id)) {
+            emitInvalidPeerId();
+            return;
+        }
+        id = id ?? crypto.randomUUID().substring(0, 8);
+        let peer = this[sCreatePeer](id, true);
+        this.emit(PoolEvent.Connection, peer);
     }
 
     async makeOffer(peerId) {

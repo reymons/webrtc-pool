@@ -25,16 +25,24 @@
             width: 100px;
             height: 100px;
         }
+        .guest__status-info,
+        .guest__media-btns {
+            display: none;
+        }
+        .guest_remote .guest__status-info,
+        .guest_remote .guest__media-btns {
+            display: block;
+        }
         </style>
     </head>
     <body>
         <template id="guest">
             <div class="guest">
-                <div>
+                <div class="guest__status-info">
                     <b id="status-mic">Mic off</b>
                     <b id="status-cam">Cam off</b>
                 </div>
-                <div>
+                <div class="guest__media-btns">
                     <button id="btn-remote-audio" type="button">Mute audio</button>
                     <button id="btn-remote-video" type="button">Mute video</button>
                 </div>

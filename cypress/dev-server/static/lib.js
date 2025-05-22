@@ -58,6 +58,7 @@ export class Room {
         switch (type) {
             case "init":
                 data.peerIds.forEach(id => this.pool.makeOffer(id));
+                this.pool.emit("u_init");
                 break;
             case "offer":
                 this.pool.acceptOffer(data.offer, data.peerId);
@@ -115,6 +116,8 @@ class GuestView {
         let temp = document.querySelector("template#guest");
         let doc = temp.content.cloneNode(true);
         let peer = this._peer;
+        let micStatus = doc.getElementById("status-mic");
+        let camStatus = doc.getElementById("status-cam");
     
         this._video = doc.querySelector("video");
         this._video.srcObject = peer.remoteStream;
@@ -127,12 +130,16 @@ class GuestView {
             peer.toggleRemoteVideo();
         };
 
-        let micStatus = doc.getElementById("status-mic");
-        let camStatus = doc.getElementById("status-cam");
         peer.on("remotemediachange", () => {
             micStatus.innerText = peer.remoteAudioEnabled ? "Mic on" : "Mic off";
             camStatus.innerText = peer.remoteVideoEnabled ? "Cam on" : "Cam off";
         });
+
+        if (peer.abstract) {
+            this._video.style.border = "5px solid green";
+        } else {
+            this._node.classList.add("guest_remote");
+        }
 
         root.appendChild(doc);
 
