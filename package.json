@@ -14,7 +14,7 @@
   ],
   "exports": {
     "import": "lib.esm.js",
-    "require": "lib.cjs"
+    "require": "lib.common.js"
   },
   "repository": {
     "type": "git",
