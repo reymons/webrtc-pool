@@ -3,7 +3,15 @@
   "type": "module",
   "version": "0.0.1",
   "description": "Manage WebRTC peer pool easily",
-  "types": "types/lib.d.ts",
+  "main": "lib.esm.js",
+  "types": "./types/lib.d.ts",
+  "exports": {
+    ".": {
+      "import": "lib.esm.js",
+      "types": "types/lib.d.ts",
+      "require": "lib.common.js"
+    }
+  },
   "files": [
     "README.md",
     "package.json",
@@ -12,10 +20,6 @@
     "lib.esm.js",
     "types"
   ],
-  "exports": {
-    "import": "lib.esm.js",
-    "require": "lib.common.js"
-  },
   "repository": {
     "type": "git",
     "url": "https://github.com/reymons/webrtc-pool.git"

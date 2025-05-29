@@ -1,67 +1,101 @@
 type PeerId = string;
 type MessageData = string | Blob | ArrayBuffer | ArrayBufferView;
-type WithPeerId<T extends Record<string, any>> = { peerId: PeerId } & T;
+type BasePoolEvent<T extends Record<string, any>> = { peerId: PeerId } & T;
 
-type WebRTCEventType = keyof WebRTCEventMap;
+type Offer = { type: "offer"; sdp: string; }
+type Answer = { type: "answer"; sdp: string; }
+type Candidate = RTCIceCandidateInit
 
-type WebRTCEventMap = {
+type PoolEventMap = {
     "error": Error;
-    "offer": WithPeerId<{ offer: Offer }>;
-    "answer": WithPeerId<{ answer: Answer }>;
-    "candidate": WithPeerId<{ candidateInfo: CandidateInfo }>;
-    "peerdisconnected": WithPeerId<{}>;
-    "peerconnected": WithPeerId<{}>;
-    "mediastream": WithPeerId<{ stream: MediaStream }>;
-    "trackstatechanged": WithPeerId<{ kind: typeof Track; enabled: boolean }>;
-    "message": WithPeerId<{ data: MessageData }>;
-};
-
-declare interface Offer {
-    sdp: string;
+    "offer": BasePoolEvent<{ offer: Offer }>;
+    "answer": BasePoolEvent<{ answer: Answer }>;
+    "candidate": BasePoolEvent<{ candidate: Candidate }>;
+    "connection": PoolPeer;
 }
 
-declare interface Answer {
-    sdp: string;
+type PeerEventMap = {
+    "error": Error;
+    "disconnect": never;
+    "message": unknown;
+    "remotemediachange": unknown;
+    "localmediachange": unknown;
 }
 
-declare interface CandidateInfo {
-    candidate: RTCIceCandidateInit;
-    gatheringState: RTCIceGathererState;
-}
-
-declare function Pool(): {
-    event: {
-        on<T extends WebRTCEventType>(type: T, listener: (data: WebRTCEventMap[T]) => void): void;
-        off<T extends WebRTCEventType>(type: T, listener: (data: WebRTCEventMap[T]) => void): void;
-        map(schema: Partial<{
-            [E in keyof WebRTCEventMap]: (data: WebRTCEventMap[E]) => void;
-        }>): void;
-    };
-    makeOffer: (peerId: PeerId) => Promise<void>;
-    acceptOffer: (peerId: PeerId, offer: Offer) => Promise<void>;
-    acceptAnswer: (peerId: PeerId, answer: Answer) => Promise<void>;
-    addCandidate: (peerId: PeerId, info: CandidateInfo) => Promise<void>;
-    removePeer: (peerId: PeerId) => void;
-    localAudioEnabled: boolean;
-    localVideoEnabled: boolean;
-    enableLocalAudio: () => void;
-    enableLocalVideo: () => void;
-    disableLocalAudio: () => void;
-    disableLocalVideo: () => void;
-    send: (peerId: PeerId, data: MessageData) => void;
-    sendToAll: (data: MessageData) => void;
-}
+type MediaKindType = 
+    | "audio"
+    | "video"
 
 declare const PoolEvent: {
+    Connection: "connection",
     Error: "error",
     Offer: "offer",
     Answer: "answer",
-    Candidate: "candidate",
-    PeerDisconnected: "peerdisconnected",
-    PeerConnected: "peerconnected",
-    MediaStream: "mediastream",
-    TrackStateChanged: "trackstatechanged",
-    Message: "message",
+    Candidate: "candidate"
 }
-declare const SelfId: string;
-declare const Track: "audio" | "video";
+
+declare const PeerEvent: {
+    Error: "error",
+    Disconnect: "disconnect",
+    Message: "message",
+    RemoteMediaChange: "remotemediachange",
+    LocalMediaChange: "localmediachange"
+}
+
+declare const MediaKind: {
+    Audio: "audio",
+    Video: "video",
+}
+
+declare class EventEmitter<EventMap extends Record<string, any>> {
+    on<E extends keyof EventMap>(event: E, listener: (data: EventMap[E]) => void): () => void;
+    off<E extends keyof EventMap>(event: E, listener: (data: EventMap[E]) => void): void;
+    emit<E extends keyof EventMap>(event: E, data: EventMap[E]): void;
+}
+
+declare class WebRTCPool extends EventEmitter<PoolEventMap> {
+    makeOffer(peerId: PeerId): Promise<void>;
+    acceptOffer(offer: Offer, peerId: PeerId): Promise<void>;
+    acceptAnswer(answer: Answer, peerId: PeerId): Promise<void>;
+    addCandidate(candidate: Candidate, peerId: PeerId): Promise<void>;
+    connectAbstractPeer(id?: PeerId): void;
+    closePeer(peerId: PeerId): void;
+    closeAllPeers(): void;
+    get localAudioEnabled(): boolean;
+    get localVideoEnabled(): boolean;
+    toggleLocalAudio(force?: boolean): void;
+    toggleLocalVideo(force?: boolean): void;
+    toggleRemoteAudio(force?: boolean): void;
+    toggleRemoteVideo(force?: boolean): void;
+}
+
+declare class PoolPeer extends EventEmitter<PeerEventMap> {
+    get id(): PeerId;
+    get remoteStream(): MediaStream;
+    get abstract(): boolean;
+    get localAudioEnabled(): boolean;
+    get localVideoEnabled(): boolean;
+    get remoteAudioEnabled(): boolean;
+    get remoteVideoEnabled(): boolean;
+    toggleLocalAudio(force?: boolean): void;
+    toggleLocalVideo(force?: boolean): void;
+    toggleRemoteAudio(force?: boolean): void;
+    toggleRemoteVideo(force?: boolean): void;
+    sendMessage(message: string): void;
+    close(): void;
+}
+
+declare function createPool(): WebRTCPool;
+
+export {
+    WebRTCPool,
+    PoolPeer,
+    PoolEvent,
+    PeerEvent,
+    MediaKind,
+    MediaKindType,
+    PoolEventMap,
+    PeerEventMap,
+    createPool,
+};
+
